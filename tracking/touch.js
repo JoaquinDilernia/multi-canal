@@ -10,7 +10,9 @@
 (function () {
   'use strict';
 
-  var API_URL = 'https://multi-canal-production.up.railway.app/api/touch';
+  var API_BASE = 'https://multi-canal-production.up.railway.app';
+  var API_URL = API_BASE + '/api/touch';
+  var CONVERSION_URL = API_BASE + '/api/conversion/track';
   var VISITOR_KEY = 'at_vid';
   var SESSION_KEY = 'at_session';
 
@@ -100,6 +102,26 @@
         keepalive: true,
       }).catch(function () {});
     }
+  }
+
+  // En la página de confirmación de compra: registrar conversión y salir
+  var path = window.location.pathname.toLowerCase();
+  var onSuccessPage = path.indexOf('/checkout') !== -1 && path.indexOf('success') !== -1;
+
+  if (onSuccessPage) {
+    var vid = getOrCreateVisitorId();
+    var convBody = JSON.stringify({ visitor_id: vid });
+    if (typeof navigator.sendBeacon === 'function') {
+      navigator.sendBeacon(CONVERSION_URL, new Blob([convBody], { type: 'application/json' }));
+    } else {
+      fetch(CONVERSION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: convBody,
+        keepalive: true,
+      }).catch(function () {});
+    }
+    return;
   }
 
   // Registrar toque solo si hay señal de canal pagado O si es inicio de sesión nueva

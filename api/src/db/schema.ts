@@ -37,6 +37,22 @@ export const touches = pgTable(
   })
 );
 
+// Registra la intención de conversión desde el browser en la success page.
+// El webhook de TN la consume y la elimina al crear la conversión definitiva.
+export const conversion_sessions = pgTable(
+  'conversion_sessions',
+  {
+    id: serial('id').primaryKey(),
+    visitor_id: varchar('visitor_id', { length: 36 })
+      .references(() => visitors.id)
+      .notNull(),
+    created_at: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    createdAtIdx: index('conversion_sessions_created_at_idx').on(table.created_at),
+  })
+);
+
 export const conversions = pgTable(
   'conversions',
   {
