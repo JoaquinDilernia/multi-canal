@@ -10,10 +10,17 @@ import dashboardRouter from './routes/dashboard';
 
 export const app = express();
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
-  .split(',')
-  .map((o) => o.trim())
-  .filter(Boolean);
+// Static files before CORS — assets no necesitan CORS check
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
+const allowedOrigins = [
+  ...(process.env.ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean),
+  // Railway inyecta RAILWAY_PUBLIC_DOMAIN automáticamente — permite que el dashboard
+  // llame a la API desde el mismo dominio sin configuración manual extra
+  ...(process.env.RAILWAY_PUBLIC_DOMAIN
+    ? [`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`]
+    : []),
+];
 
 app.use(
   cors({
@@ -28,7 +35,6 @@ app.use(
 );
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'public')));
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, ts: new Date().toISOString() });
