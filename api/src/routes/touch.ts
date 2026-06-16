@@ -11,15 +11,11 @@ router.post('/', async (req, res) => {
       visitor_id,
       utm_source, utm_medium, utm_campaign, utm_content, utm_term,
       fbclid, gclid, ttclid, epik,
-      referrer, page_url, store,
+      referrer, page_url,
     } = req.body;
 
     if (!visitor_id || typeof visitor_id !== 'string') {
       return res.status(400).json({ error: 'visitor_id requerido y debe ser string' });
-    }
-
-    if (!store || !['mayorista', 'minorista'].includes(store)) {
-      return res.status(400).json({ error: 'store debe ser "mayorista" o "minorista"' });
     }
 
     const params: TouchParams = {
@@ -37,7 +33,6 @@ router.post('/', async (req, res) => {
       sub_canal: sub_canal ?? null,
       raw_params: params,
       page_url: page_url ?? null,
-      store,
     });
 
     return res.status(201).json({ ok: true });

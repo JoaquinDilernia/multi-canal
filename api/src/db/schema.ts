@@ -26,7 +26,6 @@ export const touches = pgTable(
     timestamp: timestamp('timestamp').defaultNow().notNull(),
     raw_params: jsonb('raw_params'),
     page_url: text('page_url'),
-    store: varchar('store', { length: 20 }).notNull(),
   },
   (table) => ({
     visitorIdIdx: index('touches_visitor_id_idx').on(table.visitor_id),
@@ -47,7 +46,6 @@ export const conversions = pgTable(
     email: varchar('email', { length: 255 }),
     monto: numeric('monto', { precision: 10, scale: 2 }),
     fecha: timestamp('fecha').defaultNow().notNull(),
-    store: varchar('store', { length: 20 }),
   },
   (table) => ({
     visitorIdIdx: index('conversions_visitor_id_idx').on(table.visitor_id),

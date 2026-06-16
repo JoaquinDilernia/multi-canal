@@ -4,15 +4,13 @@
  * Instalación en Tienda Nube:
  * Admin → Personalización → Scripts/HTML personalizado → agregar al <head>
  *
- * Cambiar las dos constantes según la tienda donde se instala:
+ * Cambiar la constante antes de instalar:
  *   API_URL → URL del deploy en Railway (ej. https://xxx.railway.app/api/touch)
- *   STORE   → 'minorista' o 'mayorista'
  */
 (function () {
   'use strict';
 
   var API_URL = 'https://TU-API.railway.app/api/touch'; // ← cambiar por URL de Railway
-  var STORE = 'minorista'; // ← cambiar a 'mayorista' en la otra tienda
   var VISITOR_KEY = 'at_vid';
   var SESSION_KEY = 'at_session';
 
@@ -75,7 +73,6 @@
   function sendTouch(visitorId, params) {
     var payload = {
       visitor_id: visitorId,
-      store: STORE,
       page_url: window.location.href,
       utm_source: params.utm_source,
       utm_medium: params.utm_medium,
