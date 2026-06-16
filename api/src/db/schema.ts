@@ -68,3 +68,21 @@ export const conversions = pgTable(
     emailIdx: index('conversions_email_idx').on(table.email),
   })
 );
+
+// Clicks de email marketing desde Perfit.
+// Se joinea con conversions por email en el dashboard Sankey.
+export const perfit_events = pgTable(
+  'perfit_events',
+  {
+    id: serial('id').primaryKey(),
+    email: varchar('email', { length: 255 }).notNull(),
+    campaign_name: varchar('campaign_name', { length: 255 }),
+    event_type: varchar('event_type', { length: 50 }).notNull(),
+    created_at: timestamp('created_at').defaultNow().notNull(),
+    raw_payload: jsonb('raw_payload'),
+  },
+  (table) => ({
+    emailIdx: index('perfit_events_email_idx').on(table.email),
+    createdAtIdx: index('perfit_events_created_at_idx').on(table.created_at),
+  })
+);

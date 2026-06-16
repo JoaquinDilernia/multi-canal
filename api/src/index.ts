@@ -5,6 +5,7 @@ import cors from 'cors';
 import touchRouter from './routes/touch';
 import conversionRouter from './routes/conversion';
 import tnWebhookRouter from './routes/webhooks/tiendanube';
+import perfitWebhookRouter from './routes/webhooks/perfit';
 
 export const app = express();
 
@@ -35,3 +36,4 @@ app.get('/health', (_req, res) => {
 app.use('/api/touch', touchRouter);
 app.use('/api/conversion', conversionRouter);
 app.use('/api/webhooks/tiendanube', tnWebhookRouter);
+app.use('/api/webhooks/perfit', perfitWebhookRouter);
