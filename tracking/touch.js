@@ -10,7 +10,7 @@
 (function () {
   'use strict';
 
-  var API_URL = 'https://TU-API.railway.app/api/touch'; // ← cambiar por URL de Railway
+  var API_URL = 'https://multi-canal-production.up.railway.app/api/touch';
   var VISITOR_KEY = 'at_vid';
   var SESSION_KEY = 'at_session';
 
