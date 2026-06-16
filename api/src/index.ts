@@ -6,6 +6,7 @@ import touchRouter from './routes/touch';
 import conversionRouter from './routes/conversion';
 import tnWebhookRouter from './routes/webhooks/tiendanube';
 import perfitWebhookRouter from './routes/webhooks/perfit';
+import dashboardRouter from './routes/dashboard';
 
 export const app = express();
 
@@ -37,3 +38,4 @@ app.use('/api/touch', touchRouter);
 app.use('/api/conversion', conversionRouter);
 app.use('/api/webhooks/tiendanube', tnWebhookRouter);
 app.use('/api/webhooks/perfit', perfitWebhookRouter);
+app.use('/api/dashboard', dashboardRouter);
