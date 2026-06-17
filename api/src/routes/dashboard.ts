@@ -14,22 +14,8 @@ const CANAL_LABELS: Record<string, string> = {
   referral: 'Referral',
 };
 
-const CANAL_COLORS: Record<string, string> = {
-  meta: '#1877F2',
-  google: '#EA4335',
-  email: '#F59E0B',
-  tiktok: '#FF0050',
-  organico: '#10B981',
-  directo: '#94A3B8',
-  referral: '#8B5CF6',
-  compra: '#34D399',
-};
-
-function withAlpha(hex: string, alpha: number): string {
-  return hex + Math.round(alpha * 255).toString(16).padStart(2, '0');
-}
-
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_POS = 5;
 
 router.get('/sankey', async (req, res) => {
   try {
@@ -42,7 +28,7 @@ router.get('/sankey', async (req, res) => {
         ? req.query.hasta
         : new Date().toISOString().slice(0, 10);
 
-    // Touches por conversión, hasta 5 por journey
+    // Touches por conversión (hasta 5)
     const touchRows = (await db.execute(sql`
       WITH ranked AS (
         SELECT
@@ -58,15 +44,14 @@ router.get('/sankey', async (req, res) => {
       )
       SELECT cid, canal, pos::int AS pos
       FROM ranked
-      WHERE pos <= 5
+      WHERE pos <= ${MAX_POS - 1}
       ORDER BY cid, pos
     `)) as unknown as Array<{ cid: number; canal: string; pos: number }>;
 
-    // Email-only conversions matcheadas por Perfit
+    // Email-only vía Perfit
     const perfitRows = (await db.execute(sql`
       SELECT DISTINCT ON (c.id)
-        c.id AS cid,
-        pe.campaign_name
+        c.id AS cid, pe.campaign_name
       FROM conversions c
       JOIN perfit_events pe
         ON LOWER(pe.email) = LOWER(c.email)
@@ -78,18 +63,27 @@ router.get('/sankey', async (req, res) => {
       ORDER BY c.id, pe.created_at DESC
     `)) as unknown as Array<{ cid: number; campaign_name: string | null }>;
 
-    // Totales para el resumen
+    // Monto por conversión
+    const montoRows = (await db.execute(sql`
+      SELECT id::int AS cid, COALESCE(monto::float, 0) AS monto
+      FROM conversions
+      WHERE fecha::date BETWEEN ${desde}::date AND ${hasta}::date
+    `)) as unknown as Array<{ cid: number; monto: number }>;
+
+    const montoMap = new Map<number, number>();
+    for (const r of montoRows) montoMap.set(r.cid, r.monto);
+
+    // Totales resumen
     const [summary] = (await db.execute(sql`
       SELECT
-        COUNT(*)::int                            AS total,
+        COUNT(*)::int AS total,
         COALESCE(SUM(monto::numeric), 0)::float AS monto_total
       FROM conversions
       WHERE fecha::date BETWEEN ${desde}::date AND ${hasta}::date
     `)) as unknown as Array<{ total: number; monto_total: number }>;
 
-    // Construir map cid -> canales[]
+    // Construir journeys map: cid -> canal[]
     const journeys = new Map<number, string[]>();
-
     for (const row of touchRows) {
       if (!journeys.has(row.cid)) journeys.set(row.cid, []);
       journeys.get(row.cid)!.push(row.canal);
@@ -98,78 +92,88 @@ router.get('/sankey', async (req, res) => {
       if (!journeys.has(row.cid)) journeys.set(row.cid, ['email']);
     }
 
-    // Contar links: "canal_pos|canal_pos" -> { count, canal }
-    const linkCounts = new Map<string, { count: number; canal: string }>();
-    for (const canales of journeys.values()) {
-      for (let i = 0; i < canales.length; i++) {
-        const src = `${canales[i]}_${i + 1}`;
-        const tgt =
-          i + 1 < canales.length ? `${canales[i + 1]}_${i + 2}` : 'compra';
-        const key = `${src}|${tgt}`;
-        const existing = linkCounts.get(key);
-        if (existing) {
-          existing.count++;
-        } else {
-          linkCounts.set(key, { count: 1, canal: canales[i] });
-        }
+    // Construir nodos por columna y flows
+    // nodeKey: `${pos}|${canal}` -> { count, revenue }
+    type NodeKey = string;
+    const nodeData = new Map<NodeKey, { count: number; revenue: number; isCompra: boolean }>();
+    const flowCounts = new Map<string, number>();
+    const totalAtrib = journeys.size;
+
+    for (const [cid, canales] of journeys) {
+      const monto = montoMap.get(cid) ?? 0;
+      // compra aparece en la posición siguiente al último toque (max MAX_POS)
+      const compraPos = Math.min(canales.length + 1, MAX_POS);
+
+      // nodos de touch
+      for (let i = 0; i < canales.length && i < MAX_POS - 1; i++) {
+        const key = `${i + 1}|${canales[i]}`;
+        const e = nodeData.get(key) ?? { count: 0, revenue: 0, isCompra: false };
+        nodeData.set(key, { ...e, count: e.count + 1 });
+      }
+
+      // nodo compra
+      const cKey = `${compraPos}|compra`;
+      const ec = nodeData.get(cKey) ?? { count: 0, revenue: 0, isCompra: true };
+      nodeData.set(cKey, { count: ec.count + 1, revenue: ec.revenue + monto, isCompra: true });
+
+      // flows
+      const seq = [...canales.slice(0, MAX_POS - 1), 'compra'];
+      for (let i = 0; i < seq.length - 1; i++) {
+        if (i >= MAX_POS - 1) break;
+        const fk = `${i + 1}|${seq[i]}>${i + 2}|${seq[i + 1]}`;
+        flowCounts.set(fk, (flowCounts.get(fk) ?? 0) + 1);
       }
     }
 
-    // Construir nodos únicos
-    const nodeKeySet = new Set<string>();
-    for (const key of linkCounts.keys()) {
-      const [src, tgt] = key.split('|');
-      nodeKeySet.add(src);
-      nodeKeySet.add(tgt);
+    // Agrupar por columna
+    const colMap = new Map<number, Array<{ canal: string; count: number; revenue: number; isCompra: boolean }>>();
+    for (const [key, data] of nodeData) {
+      const [pStr, canal] = key.split('|');
+      const pos = parseInt(pStr);
+      if (!colMap.has(pos)) colMap.set(pos, []);
+      colMap.get(pos)!.push({ canal, ...data });
     }
 
-    const sorted = [...nodeKeySet]
-      .filter((k) => k !== 'compra')
-      .sort((a, b) => {
-        const pa = parseInt(a.split('_').pop() ?? '0');
-        const pb = parseInt(b.split('_').pop() ?? '0');
-        return pa !== pb ? pa - pb : a.localeCompare(b);
+    const columns = [...colMap.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([pos, channels]) => {
+        // ordenar: compra primero, luego por count desc
+        channels.sort((a, b) => {
+          if (a.isCompra && !b.isCompra) return -1;
+          if (!a.isCompra && b.isCompra) return 1;
+          return b.count - a.count;
+        });
+        return {
+          position: pos,
+          label: pos === MAX_POS ? `TOQUE ${pos}+` : `TOQUE ${pos}`,
+          channels: channels.map((ch) => ({
+            canal: ch.canal,
+            label: ch.isCompra ? 'Compra' : (CANAL_LABELS[ch.canal] ?? ch.canal),
+            count: ch.count,
+            revenue: ch.revenue,
+            isCompra: ch.isCompra,
+            pct: ch.isCompra && totalAtrib > 0
+              ? Math.round((ch.count / totalAtrib) * 100)
+              : undefined,
+          })),
+          total_revenue: channels.filter(c => c.isCompra).reduce((s, c) => s + c.revenue, 0),
+        };
       });
-    if (nodeKeySet.has('compra')) sorted.push('compra');
 
-    const nodeIndex = new Map<string, number>();
-    const nodes: Array<{ key: string; label: string; color: string }> = [];
-
-    for (const key of sorted) {
-      nodeIndex.set(key, nodes.length);
-      const canal = key === 'compra' ? 'compra' : key.split('_')[0];
-      const pos = key === 'compra' ? null : parseInt(key.split('_').pop() ?? '1');
-      const label =
-        key === 'compra'
-          ? 'Compra'
-          : `${CANAL_LABELS[canal] ?? canal}${pos !== null ? ` (T${pos})` : ''}`;
-      nodes.push({ key, label, color: CANAL_COLORS[canal] ?? '#94A3B8' });
-    }
-
-    const links: Array<{
-      source: number;
-      target: number;
-      value: number;
-      color: string;
-    }> = [];
-
-    for (const [key, { count, canal }] of linkCounts) {
-      const [src, tgt] = key.split('|');
-      links.push({
-        source: nodeIndex.get(src)!,
-        target: nodeIndex.get(tgt)!,
-        value: count,
-        color: withAlpha(CANAL_COLORS[canal] ?? '#94A3B8', 0.4),
-      });
-    }
+    const flows = [...flowCounts.entries()].map(([key, count]) => {
+      const [from, to] = key.split('>');
+      const [fromPos, fromCanal] = from.split('|');
+      const [toPos, toCanal] = to.split('|');
+      return { fromPos: parseInt(fromPos), fromCanal, toPos: parseInt(toPos), toCanal, count };
+    });
 
     res.json({
-      nodes,
-      links,
+      columns,
+      flows,
       summary: {
         total: summary?.total ?? 0,
-        atribuidas: journeys.size,
-        sin_atribucion: (summary?.total ?? 0) - journeys.size,
+        atribuidas: totalAtrib,
+        sin_atribucion: (summary?.total ?? 0) - totalAtrib,
         monto_total: summary?.monto_total ?? 0,
       },
     });
