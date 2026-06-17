@@ -462,7 +462,7 @@ export default function App() {
             <SummaryCard
               icon="🎯" label="Con atribución" accent="#10B981"
               value={`${data.summary.atribuidas.toLocaleString()} (${pct}%)`}
-              sub={`${data.summary.sin_atribucion} sin match de visitor`}
+              sub={data.summary.sin_atribucion > 0 ? `+ ${data.summary.sin_atribucion} sin canal detectado` : 'todas atribuidas'}
             />
             <SummaryCard
               icon="💰" label="Revenue total" accent="#F59E0B"
